@@ -286,7 +286,7 @@
             useEffect(() => {
                 const connect = () => {
                     // REPLACE WITH YOUR TUNNEL URL
-                    const ws = new WebSocket('wss://fall-companies-jenny-consists.trycloudflare.com/ws');
+                    const ws = new WebSocket('wss://api.obscanner.space/ws');
                     ws.onopen = () => { setStatus("CONNECTED"); ws.send(JSON.stringify({action:"GET_SYMBOLS"})); ws.send(JSON.stringify({action:"SCAN", symbol, timeframes:selectedTFs})); };
                     ws.onmessage = (e) => { 
                         try { 
@@ -382,3 +382,4 @@
 </body>
 
 </html>
+
