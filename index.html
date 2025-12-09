@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AURA-QX PRO SMC</title>
     
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -14,15 +14,37 @@
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
-        body { font-family: 'JetBrains Mono', monospace; background: #050505; color: #e0e0e0; overflow: hidden; }
+        body { font-family: 'JetBrains Mono', monospace; background: #050505; color: #e0e0e0; margin: 0; padding: 0; }
+        
+        /* SCROLLING FIXES */
+        html, body { overflow-x: hidden; }
+        
+        /* Desktop */
+        @media (min-width: 1024px) {
+            body { height: 100vh; overflow: hidden; }
+            #root { height: 100vh; }
+        }
+
+        /* Mobile */
+        @media (max-width: 1023px) {
+            body { height: auto; overflow-y: auto; }
+            #root { height: auto; min-height: 100vh; overflow-y: auto; }
+            .mobile-chart { height: 55vh !important; min-height: 400px; display: block; width: 100%; }
+            .mobile-expand { flex: none !important; height: auto !important; }
+        }
+
         .glass { background: rgba(15, 15, 15, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.08); }
         .input-glass { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); color: white; }
         .dropdown-glass { background: #0a0a0a; border: 1px solid #333; max-height: 200px; overflow-y: auto; position: absolute; top: 100%; left: 0; width: 100%; z-index: 50; }
         .dropdown-item { padding: 6px 10px; cursor: pointer; font-size: 11px; color: #aaa; border-bottom: 1px solid #111; }
         .dropdown-item:hover { background: #1a1a1a; color: white; }
-        ::-webkit-scrollbar { width: 5px; }
+        
+        ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #111; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
         .btn-active { background: #10b981; color: black; border-color: #10b981; }
         .btn-inactive { background: rgba(255,255,255,0.05); color: #888; }
         .nav-btn { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; transition: all 0.2s; border: 1px solid transparent; }
@@ -35,17 +57,10 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const originalConsoleError = console.error;
-        console.error = (...args) => {
-            if (typeof args[0] === 'string' && /defaultProps/.test(args[0])) return;
-            originalConsoleError(...args);
-        };
-
         const { useState, useEffect, useRef, useMemo, memo } = React;
         const { ComposedChart, Bar, XAxis, YAxis, Tooltip, ReferenceArea, ReferenceLine, ReferenceDot, CartesianGrid, Cell, ResponsiveContainer } = window.Recharts;
 
-        // --- 1. VISUAL COMPONENTS ---
-
+        // --- COMPONENTS ---
         const CandleShape = ({ x, y, width, height, payload }) => {
             const { open, close, high, low, color } = payload;
             const priceRange = high - low;
@@ -59,17 +74,18 @@
 
         const CurrentPriceLabel = ({ viewBox, value }) => {
             if (!value || isNaN(value)) return null;
-            return <g><rect x={viewBox.width} y={viewBox.y - 10} width={65} height={20} fill="#10b981" rx={2} /><text x={viewBox.width + 32} y={viewBox.y + 4} fill="black" textAnchor="middle" fontSize={11} fontWeight="bold" fontFamily="monospace">{Number(value).toFixed(2)}</text></g>;
+            // Shifted right to align with new narrower axis
+            return <g><rect x={viewBox.width} y={viewBox.y - 10} width={50} height={20} fill="#10b981" rx={2} /><text x={viewBox.width + 25} y={viewBox.y + 4} fill="black" textAnchor="middle" fontSize={10} fontWeight="bold" fontFamily="monospace">{Number(value).toFixed(2)}</text></g>;
         };
 
         const CursorLabel = ({ viewBox, value }) => {
             if (!value || isNaN(value)) return null;
-            return <g><rect x={viewBox.width} y={viewBox.y - 10} width={65} height={20} fill="#333" rx={2} /><text x={viewBox.width + 32} y={viewBox.y + 4} fill="white" textAnchor="middle" fontSize={11} fontWeight="bold" fontFamily="monospace">{Number(value).toFixed(2)}</text></g>;
+            return <g><rect x={viewBox.width} y={viewBox.y - 10} width={50} height={20} fill="#333" rx={2} /><text x={viewBox.width + 25} y={viewBox.y + 4} fill="white" textAnchor="middle" fontSize={10} fontWeight="bold" fontFamily="monospace">{Number(value).toFixed(2)}</text></g>;
         };
 
         const ZoneLabel = ({ viewBox, zone }) => {
             if (viewBox.height < 5) return null;
-            return <g><rect x={viewBox.width} y={viewBox.y} width={4} height={viewBox.height} fill={zone.color} opacity={0.8} />{zone.is_poi && <text x={viewBox.width+8} y={viewBox.y+10} fill={zone.color} fontSize={9} fontWeight="bold">POI</text>}</g>;
+            return <g><rect x={viewBox.width} y={viewBox.y} width={4} height={viewBox.height} fill={zone.color} opacity={0.8} /></g>;
         };
 
         const FibLabel = ({ viewBox, level, value }) => {
@@ -81,17 +97,12 @@
             if (active && payload && payload.length) {
                 const data = payload[0].payload;
                 const col = data.close >= data.open ? 'text-emerald-400' : 'text-red-400';
-                return (
-                    <div className="bg-[#0a0a0a] border border-zinc-800 p-3 rounded shadow-xl text-xs font-mono z-50 min-w-[140px]">
-                        <div className="flex justify-between border-b border-zinc-800 pb-1 mb-2 text-zinc-400"><span>{data.timestamp}</span><span className={col}>{data.close>=data.open?'BULL':'BEAR'}</span></div>
-                        <div className="grid grid-cols-2 gap-x-4"><span className="text-zinc-500">O:</span><span className="text-zinc-300">{data.open.toLocaleString()}</span><span className="text-zinc-500">H:</span><span className="text-zinc-300">{data.high.toLocaleString()}</span><span className="text-zinc-500">L:</span><span className="text-zinc-300">{data.low.toLocaleString()}</span><span className="text-zinc-500">C:</span><span className={col}>{data.close.toLocaleString()}</span></div>
-                    </div>
-                );
+                return <div className="bg-[#0a0a0a] border border-zinc-800 p-2 rounded shadow-xl text-[10px] font-mono z-50 min-w-[120px]"><div className="flex justify-between border-b border-zinc-800 pb-1 mb-1 text-zinc-400"><span>{data.timestamp}</span><span className={col}>{data.close>=data.open?'BULL':'BEAR'}</span></div><div className="grid grid-cols-2 gap-x-2"><span className="text-zinc-500">O:</span><span className="text-zinc-300">{data.open.toFixed(2)}</span><span className="text-zinc-500">H:</span><span className="text-zinc-300">{data.high.toFixed(2)}</span><span className="text-zinc-500">L:</span><span className="text-zinc-300">{data.low.toFixed(2)}</span><span className="text-zinc-500">C:</span><span className={col}>{data.close.toFixed(2)}</span></div></div>;
             }
             return null;
         };
 
-        // --- 2. RENDER CHART (FIXED S&R FILTER) ---
+        // --- RENDER CHART (OPTIMIZED SPACE) ---
         const RenderChart = memo(({ data, market, showLiquidity, showFib, showVP, showSR, setCursorPrice, cursorPrice, containerRef, height="100%" }) => {
             const candles = data || [];
             const chartData = useMemo(() => candles.map(c => ({ ...c, range:[c.low, c.high], color: c.close>=c.open?'#10b981':'#ef4444' })), [candles]);
@@ -104,8 +115,8 @@
 
             const handleMouseMove = (e) => {
                 if (e && e.chartY && containerRef && containerRef.current) {
-                    const chartHeight = containerRef.current.clientHeight - 30; 
-                    const chartY = e.chartY - 15; 
+                    const chartHeight = containerRef.current.clientHeight - 20; 
+                    const chartY = e.chartY - 10; 
                     if (chartHeight > 0 && isFinite(maxPrice) && isFinite(minPrice)) {
                         const yRatio = chartY / chartHeight;
                         const safeRatio = Math.max(0, Math.min(1, yRatio));
@@ -119,20 +130,29 @@
 
             return (
                 <ResponsiveContainer width="100%" height={height}>
-                    <ComposedChart data={chartData} margin={{top:15, right:80, left:0, bottom:0}} onMouseMove={handleMouseMove} onMouseLeave={() => setCursorPrice(null)}>
+                    <ComposedChart data={chartData} margin={{top:10, right:0, left:0, bottom:0}} 
+                        onMouseMove={handleMouseMove} onMouseLeave={() => setCursorPrice(null)}
+                    >
                         <CartesianGrid stroke="#151515" vertical={false} strokeDasharray="3 3" />
                         <XAxis dataKey="timestamp" hide />
-                        <YAxis domain={[minPrice, maxPrice]} orientation="right" tick={{fill:'#666', fontSize:11, fontFamily:'monospace'}} tickFormatter={(v)=>v.toFixed(2)} stroke="#222" width={70} />
+                        
+                        {/* REDUCED WIDTH Y-AXIS (45px) */}
+                        <YAxis 
+                            domain={[minPrice, maxPrice]} 
+                            orientation="right" 
+                            tick={{fill:'#666', fontSize:10, fontFamily:'monospace'}} 
+                            tickFormatter={(v)=>v.toFixed(2)} 
+                            stroke="#222" 
+                            width={45} 
+                        />
                         <Tooltip content={<CustomTooltip />} cursor={{stroke:'#fff', strokeWidth:1, strokeOpacity:0.2, strokeDasharray:'4 4'}} />
                         
                         {showVP && (market.volume_profile || []).map((vp, i) => (<ReferenceArea key={`vp${i}`} y1={vp.price} y2={vp.price + (maxPrice-minPrice)/50} x1={0} x2={vp.width/3} stroke="none" fill="#3b82f6" fillOpacity={vp.is_poc ? 0.3 : 0.05} />))}
                         {showFib && market.fibonacci && Object.entries(market.fibonacci.levels).map(([level, price]) => (<ReferenceLine key={`fib${level}`} y={price} stroke={level==="0.618"?"#fbbf24":"#555"} strokeDasharray="2 2" label={(props)=><FibLabel {...props} level={level} value={price}/>} />))}
-                        {showLiquidity && (market.heatmap || []).map((l, i) => (<ReferenceLine key={`h${i}`} y={l.price} stroke={l.color} strokeOpacity={l.type.includes('WALL')?0.8:0.3} strokeWidth={l.type.includes('WALL')?2:1} strokeDasharray={l.type.includes('WALL')?'':'4 4'} label={l.type.includes('WALL')?{position:'insideTopLeft', value:l.type, fill:l.color, fontSize:10, fontWeight:'bold'}:''} />))}
-                        {showSR && (market.sr_levels || []).map((sr, i) => (<ReferenceLine key={`sr${i}`} y={sr.price} stroke={sr.color} strokeWidth={2} strokeDasharray="5 5" label={{position:'left', value: sr.type, fill: sr.color, fontSize:9, fontWeight:'bold'}} />))}
+                        {showLiquidity && (market.heatmap || []).map((l, i) => (<ReferenceLine key={`h${i}`} y={l.price} stroke={l.color} strokeOpacity={l.type.includes('WALL')?0.8:0.3} strokeWidth={l.type.includes('WALL')?2:1} strokeDasharray={l.type.includes('WALL')?'':'4 4'} />))}
+                        {showSR && (market.sr_levels || []).map((sr, i) => (<ReferenceLine key={`sr${i}`} y={sr.price} stroke={sr.color} strokeWidth={2} strokeDasharray="5 5" />))}
                         
-                        {/* SAFE FILTER: Only render zones that have bottom/top defined */}
                         {(market.zones || []).filter(z => z.bottom !== undefined && z.top !== undefined).map((z, i) => (<ReferenceArea key={`z${i}`} y1={z.bottom} y2={z.top} fill={z.color} fillOpacity={z.opacity} stroke={z.color} strokeOpacity={0.4} label={(props) => <ZoneLabel {...props} zone={z} />} />))}
-                        
                         {(market.structure || []).map((s, i) => (<ReferenceDot key={`s${i}`} x={s.timestamp} y={s.price} r={3} fill={s.color} stroke="#fff" label={{ position: 'top', value: s.type, fill: s.color, fontSize: 10, fontWeight: 'bold', dy: -5 }} />))}
                         
                         {cursorPrice && <ReferenceLine y={cursorPrice} stroke="#ffffff" strokeDasharray="2 2" strokeOpacity={0.5} label={(props) => <CursorLabel {...props} value={cursorPrice} />} />}
@@ -143,7 +163,7 @@
             );
         });
 
-        // --- 3. SUB-PANELS ---
+        // --- SUB-PANELS ---
         const StrategyLab = ({ ws, symbol }) => {
             const [status, setStatus] = useState("IDLE");
             const [result, setResult] = useState(null);
@@ -163,11 +183,11 @@
             const handleBacktest = (mode) => { if(ws.current) { setStatus("TESTING..."); ws.current.send(JSON.stringify({ action: "BACKTEST", symbol: symbol, use_saved: true, mode })); } };
 
             return (
-                <div className="flex flex-col h-full gap-4 p-4">
+                <div className="flex flex-col h-full gap-4 p-4 mobile-expand">
                     <div className="glass p-6 rounded flex flex-col items-center justify-center text-center gap-4 border border-white/5">
                         <div className="text-2xl font-bold text-emerald-500 tracking-widest">STRATEGY LAB</div>
-                        <div className="text-zinc-400 text-sm max-w-md">Download historical data from Binance and run deep backtests using the Aura-QX Order Block & FVG engine.</div>
-                        <div className="flex gap-4 mt-4"><button onClick={handleDownload} className="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-3 rounded text-xs font-bold border border-zinc-600 flex items-center gap-2"><span>📥</span> DOWNLOAD 1 YEAR DATA</button><div className="w-[1px] bg-white/10 h-10"></div><button onClick={()=>handleBacktest('OB_ONLY')} className="bg-blue-900/20 hover:bg-blue-800/40 text-blue-300 px-6 py-3 rounded text-xs font-bold border border-blue-500/30">TEST: OB ONLY</button><button onClick={()=>handleBacktest('OB_PLUS_FVG')} className="bg-purple-900/20 hover:bg-purple-800/40 text-purple-300 px-6 py-3 rounded text-xs font-bold border border-purple-500/30">TEST: OB + FVG</button></div>
+                        <div className="text-zinc-400 text-sm max-w-md">Target: <span className="text-white font-mono">{symbol}</span><br/>Download data and run backtests.</div>
+                        <div className="flex gap-4 mt-4 flex-wrap justify-center items-center"><button onClick={handleDownload} className="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-3 rounded text-xs font-bold border border-zinc-600 flex items-center gap-2"><span>📥</span> DOWNLOAD 1 YR</button><div className="w-[1px] bg-white/10 h-10 hidden md:block"></div><button onClick={()=>handleBacktest('OB_ONLY')} className="bg-blue-900/20 hover:bg-blue-800/40 text-blue-300 px-6 py-3 rounded text-xs font-bold border border-blue-500/30">TEST: OB</button><button onClick={()=>handleBacktest('OB_PLUS_FVG')} className="bg-purple-900/20 hover:bg-purple-800/40 text-purple-300 px-6 py-3 rounded text-xs font-bold border border-purple-500/30">TEST: OB+FVG</button></div>
                         <div className="text-xs font-mono text-yellow-500 mt-2 h-4">{status !== "IDLE" ? status : ""}</div>
                     </div>
                     {result && (<div className="flex-1 grid grid-cols-2 gap-4"><div className="glass p-4 rounded flex flex-col justify-center items-center"><div className="text-zinc-500 text-xs mb-2">WIN RATE</div><div className="text-4xl font-bold text-white">{result.win_rate.toFixed(1)}%</div><div className="text-zinc-600 text-xs mt-1">{result.total_trades} Trades</div></div><div className="glass p-4 rounded flex flex-col justify-center items-center"><div className="text-zinc-500 text-xs mb-2">NET PROFIT</div><div className={`text-4xl font-bold ${result.total_pnl>=0?'text-emerald-400':'text-red-400'}`}>${result.total_pnl.toFixed(2)}</div><div className="text-zinc-600 text-xs mt-1">Initial: ${result.initial_balance}</div></div><div className="col-span-2 glass p-4 rounded h-[200px] overflow-y-auto custom-scroll"><table className="w-full text-[10px] text-left"><thead className="text-zinc-500 sticky top-0 bg-[#0f0f0f]"><tr><th class="p-2">TYPE</th><th class="p-2">ENTRY</th><th class="p-2">EXIT</th><th class="p-2 text-right">PNL</th></tr></thead><tbody className="font-mono">{result.trades.slice().reverse().map((t, i) => (<tr key={i} className="border-b border-white/5 hover:bg-white/5"><td className={`p-2 ${t.type==='LONG'?'text-emerald-500':'text-red-500'}`}>{t.type}</td><td className="p-2 text-zinc-300">{t.entry.toFixed(2)}</td><td className="p-2 text-zinc-300">{t.exit.toFixed(2)}</td><td className={`p-2 text-right ${t.pnl>=0?'text-emerald-400':'text-red-400'}`}>${t.pnl.toFixed(2)}</td></tr>))}</tbody></table></div></div>)}
@@ -265,6 +285,7 @@
 
             useEffect(() => {
                 const connect = () => {
+                    // REPLACE WITH YOUR TUNNEL URL
                     const ws = new WebSocket('wss://drinking-medicaid-granted-commissioner.trycloudflare.com/ws');
                     ws.onopen = () => { setStatus("CONNECTED"); ws.send(JSON.stringify({action:"GET_SYMBOLS"})); ws.send(JSON.stringify({action:"SCAN", symbol, timeframes:selectedTFs})); };
                     ws.onmessage = (e) => { 
@@ -292,50 +313,54 @@
             if (!market) return <div className="h-screen flex flex-col items-center justify-center bg-[#050505]"><div className="text-emerald-500 animate-pulse text-2xl font-bold">AURA-QX ENGINE</div><div className="text-zinc-500 text-xs mt-2">{status} - Scanning {symbol}...</div></div>;
 
             return (
-                <div className="h-screen flex flex-col bg-[#050505] p-3 text-sm font-sans">
-                    <div className="glass p-4 rounded mb-3 flex flex-wrap gap-6 justify-between items-center z-50 relative">
-                        <div className="flex items-center gap-6"><div className="flex flex-col flex-shrink-0"><span className="font-bold text-emerald-500 tracking-wider text-lg">AURA-QX</span><span className="text-[10px] text-zinc-500">PRO TERMINAL</span></div><div className="h-10 w-[1px] bg-white/10"></div><div className="relative"><span className="text-[10px] text-zinc-400 block mb-1">ASSET PAIR</span><input type="text" value={symbol} onFocus={()=>setShowDropdown(true)} onChange={e=>{setSymbol(e.target.value.toUpperCase()); setShowDropdown(true)}} className="input-glass px-3 py-1.5 rounded w-40 text-sm font-mono outline-none focus:border-emerald-500" />{showDropdown && filteredSymbols.length>0 && <div className="dropdown-glass rounded shadow-xl mt-1">{filteredSymbols.map(s=><div key={s} onClick={()=>{selectSymbol(s)}} className="dropdown-item">{s}</div>)}</div>}</div>
-                             <div className="flex bg-black/50 p-1 rounded gap-1"><button onClick={()=>setCurrentPage("DASHBOARD")} className={`nav-btn ${currentPage==="DASHBOARD"?'active':''}`}>MARKET</button><button onClick={()=>setCurrentPage("STRATEGY")} className={`nav-btn ${currentPage==="STRATEGY"?'active':''}`}>LAB</button></div>
+                <div className="h-screen flex flex-col bg-[#050505] p-3 text-sm font-sans overflow-auto lg:h-screen lg:overflow-hidden">
+                    <div className="glass p-2 rounded mb-2 flex flex-wrap gap-2 justify-between items-center z-50 relative shrink-0">
+                        <div className="flex items-center gap-4">
+                            <div className="flex flex-col flex-shrink-0"><span className="font-bold text-emerald-500 tracking-wider text-base">AURA-QX</span></div>
+                            <div className="relative"><input type="text" value={symbol} onFocus={()=>setShowDropdown(true)} onChange={e=>{setSymbol(e.target.value.toUpperCase()); setShowDropdown(true)}} className="input-glass px-2 py-1 rounded w-24 text-xs font-mono outline-none focus:border-emerald-500" />{showDropdown && filteredSymbols.length>0 && <div className="dropdown-glass rounded shadow-xl mt-1">{filteredSymbols.map(s=><div key={s} onClick={()=>{selectSymbol(s)}} className="dropdown-item">{s}</div>)}</div>}</div>
+                             <div className="flex bg-black/50 p-0.5 rounded gap-1"><button onClick={()=>setCurrentPage("DASHBOARD")} className={`nav-btn ${currentPage==="DASHBOARD"?'active':''}`}>MARKET</button><button onClick={()=>setCurrentPage("STRATEGY")} className={`nav-btn ${currentPage==="STRATEGY"?'active':''}`}>LAB</button></div>
                         </div>
-                        <div className="flex items-center gap-3"><span className="text-[10px] text-zinc-400">TIMEFRAMES</span><div className="flex bg-black/50 rounded p-1.5 gap-1">{availableTFs.map(tf => (<button key={tf} onClick={() => toggleTF(tf)} className={`text-xs px-3 py-1.5 rounded font-bold transition-colors ${selectedTFs.includes(tf) ? 'btn-active' : 'btn-inactive hover:bg-white/10'}`}>{tf}</button>))}</div></div>
-                        <div className="flex items-center gap-4"><div className="flex flex-col"><span className="text-[10px] text-zinc-400 mb-1">LAYOUT</span><div className="flex bg-black/50 rounded p-1 gap-1"><button onClick={()=>setGridMode("SINGLE")} className={`nav-btn ${gridMode==="SINGLE"?'active':''}`}>■</button><button onClick={()=>setGridMode("GRID")} className={`nav-btn ${gridMode==="GRID"?'active':''}`}>田</button></div></div><div className="flex flex-col"><span className="text-[10px] text-zinc-400 mb-1">LAYERS</span><div className="flex gap-1"><button onClick={()=>setShowLiquidity(!showLiquidity)} className={`nav-btn ${showLiquidity?'active':'btn-inactive'}`}>LIQ</button><button onClick={()=>setShowSR(!showSR)} className={`nav-btn ${showSR?'active':'btn-inactive'}`}>S&R</button><button onClick={()=>setShowFib(!showFib)} className={`nav-btn ${showFib?'active':'btn-inactive'}`}>FIB</button><button onClick={()=>setShowVP(!showVP)} className={`nav-btn ${showVP?'active':'btn-inactive'}`}>VP</button><button onClick={toggleAi} className={`nav-btn ${aiMode?'bg-purple-600 border-purple-500 text-white':'btn-inactive'}`}>AI</button></div></div></div>
-                        <div className="flex items-center gap-6"><button onClick={()=>handleScan()} className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-2 rounded text-sm font-bold shadow-lg shadow-emerald-900/20">SCAN</button><div className="text-right border-l border-white/10 pl-6"><div className="text-3xl font-bold text-white tracking-tighter">${market.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                            {/* SENTIMENT SCORE */}
-                            {market.sentiment && (
-                                <div className={`text-[10px] font-bold text-center px-2 rounded mt-1 ${market.sentiment.label.includes("FEAR") ? "bg-red-500/20 text-red-400" : "bg-emerald-500/20 text-emerald-400"}`}>
-                                    {market.sentiment.label} ({market.sentiment.score})
-                                </div>
-                            )}
-                            {/* LIVE/SIM TAG */}
-                            <div className={`text-[9px] font-mono text-center px-1 rounded mt-0.5 ${market.is_simulation ? 'text-yellow-500' : 'text-zinc-500'}`}>
-                                {market.is_simulation ? 'DATA: SIMULATED' : 'DATA: LIVE'}
+                        
+                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto"><div className="flex bg-black/50 rounded p-1 gap-1">{availableTFs.map(tf => (<button key={tf} onClick={() => toggleTF(tf)} className={`text-[9px] px-2 py-1 rounded font-bold transition-colors ${selectedTFs.includes(tf) ? 'btn-active' : 'btn-inactive hover:bg-white/10'}`}>{tf}</button>))}</div></div>
+                        
+                        <div className="flex items-center gap-4 overflow-x-auto no-scrollbar w-full md:w-auto pb-1 md:pb-0">
+                            <div className="flex gap-1 min-w-max">
+                                <button onClick={()=>setShowLiquidity(!showLiquidity)} className={`nav-btn ${showLiquidity?'active':'btn-inactive'}`}>LIQ</button>
+                                <button onClick={()=>setShowSR(!showSR)} className={`nav-btn ${showSR?'active':'btn-inactive'}`}>S&R</button>
+                                <button onClick={()=>setShowFib(!showFib)} className={`nav-btn ${showFib?'active':'btn-inactive'}`}>FIB</button>
+                                <button onClick={()=>setShowVP(!showVP)} className={`nav-btn ${showVP?'active':'btn-inactive'}`}>VP</button>
+                                <button onClick={toggleAi} className={`nav-btn ${aiMode?'bg-purple-600 border-purple-500 text-white':'btn-inactive'}`}>AI</button>
                             </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 w-full md:w-auto justify-end"><button onClick={()=>handleScan()} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded text-xs font-bold shadow-lg shadow-emerald-900/20">SCAN</button><div className="text-right border-l border-white/10 pl-4"><div className="text-2xl font-bold text-white tracking-tighter">${market.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                            {market.sentiment && (<div className={`text-[9px] font-bold text-center px-1 rounded mt-0.5 ${market.sentiment.label.includes("FEAR") ? "bg-red-500/20 text-red-400" : "bg-emerald-500/20 text-emerald-400"}`}>{market.sentiment.label} ({market.sentiment.score})</div>)}
                         </div></div>
                     </div>
 
-                    <div className="flex-1 overflow-hidden relative">
+                    <div className="flex-1 lg:overflow-hidden relative flex flex-col lg:flex-row gap-2 mobile-scroll">
                         {currentPage === "DASHBOARD" && (
-                            <div className="grid grid-cols-12 gap-3 h-full animate-in fade-in">
-                                <div className="col-span-10 glass rounded relative flex flex-col min-h-0 p-2" ref={chartContainerRef}>
-                                    <div className="absolute top-4 left-4 z-10 flex gap-3 text-[10px] font-mono pointer-events-none opacity-90"><span className="bg-blue-900/40 text-blue-200 px-3 py-1 rounded border border-blue-500/20">OB</span><span className="bg-yellow-900/40 text-yellow-200 px-3 py-1 rounded border border-yellow-500/20">FVG</span></div>
+                            <>
+                                <div className="lg:flex-1 w-full glass rounded relative flex flex-col min-h-[400px] lg:h-full p-1 mobile-chart" ref={chartContainerRef}>
+                                    <div className="absolute top-2 left-2 z-10 flex gap-2 text-[9px] font-mono pointer-events-none opacity-80"><span className="bg-blue-900/40 text-blue-200 px-2 py-0.5 rounded border border-blue-500/20">OB</span><span className="bg-yellow-900/40 text-yellow-200 px-2 py-0.5 rounded border border-yellow-500/20">FVG</span></div>
                                     
                                     {gridMode === "SINGLE" ? (
                                         <RenderChart data={market.candles} market={market} showLiquidity={showLiquidity} showFib={showFib} showVP={showVP} showSR={showSR} setCursorPrice={setCursorPrice} cursorPrice={cursorPrice} height="100%" containerRef={chartContainerRef} />
                                     ) : (
-                                        <div className="grid grid-cols-2 grid-rows-2 gap-2 h-full">
+                                        <div className="grid grid-cols-2 grid-rows-2 gap-1 h-full">
                                             {selectedTFs.slice(0,4).map(tf => (
-                                                <div key={tf} className="relative border border-white/5 rounded bg-black/20 overflow-hidden"><div className="absolute top-1 left-1 text-[10px] text-zinc-500 z-10">{tf.toUpperCase()}</div><RenderChart data={market.multi_tf_candles?.[tf] || market.candles} market={market} showLiquidity={false} showFib={false} showVP={false} showSR={false} setCursorPrice={()=>{}} height="100%" containerRef={chartContainerRef} /></div>
+                                                <div key={tf} className="relative border border-white/5 rounded bg-black/20 overflow-hidden"><div className="absolute top-1 left-1 text-[9px] text-zinc-500 z-10">{tf.toUpperCase()}</div><RenderChart data={market.multi_tf_candles?.[tf] || market.candles} market={market} showLiquidity={false} showFib={false} showVP={false} showSR={false} setCursorPrice={()=>{}} height="100%" containerRef={chartContainerRef} /></div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
-                                <div className="col-span-2 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
+                                <div className="w-full lg:w-80 flex flex-col gap-2 min-h-0 h-auto lg:h-full shrink-0 mobile-expand">
                                     <TradingPanel currentPrice={market.price} balance={balance} setBalance={setBalance} />
-                                    <div className={`glass p-4 rounded border-l-4 flex-shrink-0 transition-all ${aiMode ? 'border-purple-500 ai-active' : 'border-emerald-500'}`}>
-                                        <div className="flex justify-between mb-2"><span className={`text-xs font-bold tracking-widest ${aiMode ? 'text-purple-400' : 'text-zinc-500'}`}>{aiMode ? 'AI ANALYST' : 'SIGNAL'}</span>{aiMode && <span className="animate-pulse text-[10px] text-purple-500">...</span>}</div>
-                                        {market.signal ? (<div className="animate-in fade-in"><div className="flex justify-between items-center mb-2"><h2 className="text-white font-bold text-sm">{market.signal.type}</h2><span className="bg-emerald-500 text-black text-[10px] font-bold px-2 py-0.5 rounded">{market.signal.confidence}% CONF</span></div><p className="text-xs text-zinc-300 mb-3 leading-relaxed border-b border-white/5 pb-3">{aiMode && market.ai_narrative ? market.ai_narrative : market.signal.reason}</p></div>) : (<div className="py-6 text-center text-xs text-zinc-500 italic">Scanning...</div>)}
+                                    <div className={`glass p-3 rounded border-l-4 flex-shrink-0 transition-all ${aiMode ? 'border-purple-500 ai-active' : 'border-emerald-500'}`}>
+                                        <div className="flex justify-between mb-1"><span className={`text-[10px] font-bold tracking-widest ${aiMode ? 'text-purple-400' : 'text-zinc-500'}`}>{aiMode ? 'AI ANALYST' : 'SIGNAL'}</span>{aiMode && <span className="animate-pulse text-[10px] text-purple-500">...</span>}</div>
+                                        {market.signal ? (<div className="animate-in fade-in"><div className="flex justify-between items-center mb-1"><h2 className="text-white font-bold text-xs">{market.signal.type}</h2><span className="bg-emerald-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded">{market.signal.confidence}% CONF</span></div><p className="text-[10px] text-zinc-300 leading-relaxed border-b border-white/5 pb-2">{aiMode && market.ai_narrative ? market.ai_narrative : market.signal.reason}</p></div>) : (<div className="py-4 text-center text-[10px] text-zinc-500 italic">Scanning...</div>)}
                                     </div>
-                                    <div className="glass p-3 rounded flex-1 overflow-y-auto min-h-0 flex flex-col"><div className="text-xs text-zinc-500 font-bold mb-3 sticky top-0 bg-[#0a0a0a] py-1 border-b border-white/5">ACTIVE ZONES</div><div className="space-y-2 overflow-y-auto pr-1 custom-scroll flex-1">{(market.zones || []).slice().reverse().map((zone, i) => (<div key={i} className={`text-xs p-3 rounded border flex flex-col gap-1 hover:bg-white/5 ${zone.is_poi ? 'border-emerald-500/50 bg-emerald-500/05' : 'border-white/5 bg-white/05'}`}><div className="flex justify-between font-bold items-center" style={{color: zone.color}}><span>{zone.type}</span>{zone.is_poi && <span className="text-[9px] bg-emerald-500 text-black px-1 rounded">POI {zone.win_rate ? zone.win_rate+'%' : ''}</span>}</div><div className="flex justify-between text-zinc-400 font-mono text-[11px] bg-black/20 p-1 rounded">
+                                    <div className="glass p-2 rounded flex-1 min-h-[200px] flex flex-col mobile-expand"><div className="text-[10px] text-zinc-500 font-bold mb-2 sticky top-0 bg-[#0a0a0a] py-1 border-b border-white/5">ACTIVE ZONES</div><div className="space-y-1 overflow-y-auto pr-1 custom-scroll flex-1 mobile-expand">{(market.zones || []).slice().reverse().map((zone, i) => (<div key={i} className={`text-[10px] p-2 rounded border flex flex-col gap-0.5 hover:bg-white/5 ${zone.is_poi ? 'border-emerald-500/50 bg-emerald-500/05' : 'border-white/5 bg-white/05'}`}><div className="flex justify-between font-bold items-center" style={{color: zone.color}}><span>{zone.type}</span>{zone.is_poi && <span className="text-[8px] bg-emerald-500 text-black px-1 rounded">POI {zone.win_rate ? zone.win_rate+'%' : ''}</span>}</div><div className="flex justify-between text-zinc-400 font-mono text-[9px] bg-black/20 p-1 rounded">
                                         {zone.bottom !== undefined ? (
                                             <><span>{Number(zone.bottom).toFixed(2)}</span><span className="text-zinc-600">-</span><span>{Number(zone.top).toFixed(2)}</span></>
                                         ) : (
@@ -343,7 +368,7 @@
                                         )}
                                     </div></div>))}</div></div>
                                 </div>
-                            </div>
+                            </>
                         )}
                         {currentPage === "STRATEGY" && <StrategyLab ws={wsRef} symbol={symbol} />}
                     </div>
@@ -355,5 +380,4 @@
         root.render(<SMCDashboard />);
     </script>
 </body>
-
 </html>
