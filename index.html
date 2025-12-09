@@ -265,7 +265,7 @@
 
             useEffect(() => {
                 const connect = () => {
-                    const ws = new WebSocket('ws://drinking-medicaid-granted-commissioner.trycloudflare.com/ws');
+                    const ws = new WebSocket('wss://drinking-medicaid-granted-commissioner.trycloudflare.com/ws');
                     ws.onopen = () => { setStatus("CONNECTED"); ws.send(JSON.stringify({action:"GET_SYMBOLS"})); ws.send(JSON.stringify({action:"SCAN", symbol, timeframes:selectedTFs})); };
                     ws.onmessage = (e) => { 
                         try { 
@@ -355,4 +355,5 @@
         root.render(<SMCDashboard />);
     </script>
 </body>
+
 </html>
